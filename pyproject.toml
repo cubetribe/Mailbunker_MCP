@@ -1,0 +1,73 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mailbunker"
+version = "0.1.0"
+description = "Zero-Trust Encrypted Email Archive, Real-Time IMAP Push Ingestion, Obsidian Vault Generator, and Model Context Protocol (MCP) Server"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "cubetribe", email = "info@cubetribe.com" }
+]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "email",
+    "imap",
+    "imap-idle",
+    "obsidian",
+    "zero-trust",
+    "encryption",
+    "full-text-search",
+    "fts5"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Communications :: Email",
+    "Topic :: Security :: Cryptography",
+]
+dependencies = [
+    "fastmcp>=0.4.0",
+    "mcp>=1.2.0",
+    "cryptography>=42.0.0",
+    "argon2-cffi>=23.1.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.2.0",
+    "python-dotenv>=1.0.0",
+    "aioimaplib>=2.0.0",
+    "html2text>=2024.2.26",
+    "beautifulsoup4>=4.12.0",
+    "click>=8.1.0",
+    "rich>=13.7.0",
+    "keyring>=24.3.0",
+    "pyyaml>=6.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[project.scripts]
+mailbunker = "mailbunker.cli:main"
+mailbunker-mcp = "mailbunker.mcp.server:run_server"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mailbunker"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

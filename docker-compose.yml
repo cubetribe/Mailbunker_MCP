@@ -1,0 +1,13 @@
+services:
+  mailbunker:
+    build: .
+    container_name: mailbunker
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./obsidian_vault:/app/obsidian_vault
+    environment:
+      - STORAGE_PATH=/app/data
+      - OBSIDIAN_VAULT_PATH=/app/obsidian_vault
