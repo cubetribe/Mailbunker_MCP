@@ -24,10 +24,10 @@ def test_database_insert_and_get(test_db):
         account="Work",
         folder="INBOX",
         uid=1,
-        message_id="<msg-001@work.com>",
+        message_id="<msg-001@work.example>",
         subject="Confidential Budget 2026",
-        sender=EmailAddress(name="Finance Team", email="finance@work.com"),
-        to=[EmailAddress(name="Dennis", email="dennis@work.com")],
+        sender=EmailAddress(name="Finance Team", email="finance@work.example"),
+        to=[EmailAddress(name="User", email="user@work.example")],
         date=datetime(2026, 8, 20, 10, 0, 0, tzinfo=timezone.utc),
         body_text="Here is the confidential quarterly budget outline.",
         body_markdown="Here is the **confidential quarterly budget** outline.",
@@ -46,14 +46,14 @@ def test_database_insert_and_get(test_db):
     assert inserted_id == "email_1"
 
     # Test exists
-    assert db.exists("Work", "INBOX", 1, "<msg-001@work.com>") is True
+    assert db.exists("Work", "INBOX", 1, "<msg-001@work.example>") is True
     assert db.exists("Work", "INBOX", 99, "<non-existent>") is False
 
     # Retrieve and decrypt
     retrieved = db.get_email("email_1")
     assert retrieved is not None
     assert retrieved.subject == "Confidential Budget 2026"
-    assert retrieved.sender.email == "finance@work.com"
+    assert retrieved.sender.email == "finance@work.example"
     assert retrieved.body_markdown == "Here is the **confidential quarterly budget** outline."
     assert len(retrieved.attachments) == 1
     assert retrieved.attachments[0].filename == "budget_2026.xlsx"
@@ -68,10 +68,10 @@ def test_database_fts5_search(test_db):
         account="Work",
         folder="INBOX",
         uid=1,
-        message_id="<msg-001@work.com>",
+        message_id="<msg-001@work.example>",
         subject="Project Alpha Architecture",
-        sender=EmailAddress(name="Architect", email="architect@work.com"),
-        to=[EmailAddress(name="Dennis", email="dennis@work.com")],
+        sender=EmailAddress(name="Architect", email="architect@work.example"),
+        to=[EmailAddress(name="Recipient", email="user@work.example")],
         date=datetime(2026, 8, 15, 10, 0, 0, tzinfo=timezone.utc),
         body_text="The system uses zero-trust security and SQLite FTS5 for fast searching.",
         body_markdown="The system uses zero-trust security and SQLite FTS5 for fast searching.",
@@ -82,10 +82,10 @@ def test_database_fts5_search(test_db):
         account="Personal",
         folder="INBOX",
         uid=2,
-        message_id="<msg-002@personal.com>",
+        message_id="<msg-002@personal.example>",
         subject="Weekend Hiking Trip",
-        sender=EmailAddress(name="Friend", email="friend@personal.com"),
-        to=[EmailAddress(name="Dennis", email="dennis@personal.com")],
+        sender=EmailAddress(name="Friend", email="friend@personal.example"),
+        to=[EmailAddress(name="Recipient", email="user@personal.example")],
         date=datetime(2026, 8, 18, 12, 0, 0, tzinfo=timezone.utc),
         body_text="Let's go hiking in the mountains this Saturday.",
         body_markdown="Let's go hiking in the mountains this Saturday.",

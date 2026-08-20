@@ -14,22 +14,22 @@ OBSIDIAN_VAULT_PATH=/tmp/obsidian_vault
 
 MAIL_1_ENABLED=true
 MAIL_1_NAME=WorkMail
-MAIL_1_HOST=imap.work.com
+MAIL_1_HOST=imap.work.example
 MAIL_1_PORT=993
-MAIL_1_USER=dennis@work.com
+MAIL_1_USER=alice@work.example
 MAIL_1_PASSWORD=secret1
 MAIL_1_FOLDERS=INBOX,Archive
 
 MAIL_2_ENABLED=false
 MAIL_2_NAME=OldMail
-MAIL_2_HOST=imap.old.com
-MAIL_2_USER=dennis@old.com
+MAIL_2_HOST=imap.old.example
+MAIL_2_USER=alice@old.example
 MAIL_2_PASSWORD=secret2
 
 MAIL_3_ENABLED=true
 MAIL_3_NAME=Gmail
 MAIL_3_HOST=imap.gmail.com
-MAIL_3_USER=dennis@gmail.com
+MAIL_3_USER=alice@gmail.example
 MAIL_3_PASSWORD=app_password
 """
     env_file.write_text(env_content)
@@ -42,8 +42,8 @@ MAIL_3_PASSWORD=app_password
 
     acc1 = config.accounts[0]
     assert acc1.name == "WorkMail"
-    assert acc1.host == "imap.work.com"
-    assert acc1.user == "dennis@work.com"
+    assert acc1.host == "imap.work.example"
+    assert acc1.user == "alice@work.example"
     assert acc1.folders == ["INBOX", "Archive"]
     assert acc1.enabled is True
 
@@ -53,4 +53,4 @@ MAIL_3_PASSWORD=app_password
 
     acc3 = config.accounts[2]
     assert acc3.name == "Gmail"
-    assert acc3.user == "dennis@gmail.com"
+    assert acc3.user == "alice@gmail.example"

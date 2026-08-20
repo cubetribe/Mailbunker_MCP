@@ -33,13 +33,13 @@ def test_html_to_clean_markdown():
 
 def test_parse_plain_text_email():
     raw_email = b"""From: "Alice Smith" <alice@example.com>
-To: "Dennis Westermann" <dennis@example.com>
+To: "Bob Jones" <bob@example.com>
 Subject: Test Meeting
 Date: Thu, 20 Aug 2026 14:30:00 +0200
 Message-ID: <msg-001@example.com>
 Content-Type: text/plain; charset="utf-8"
 
-Hi Dennis,
+Hi Bob,
 Let's meet tomorrow at 10 AM to discuss Mailbunker.
 
 Best,
@@ -54,18 +54,18 @@ Alice
     assert msg.sender.name == "Alice Smith"
     assert msg.sender.email == "alice@example.com"
     assert len(msg.to) == 1
-    assert msg.to[0].email == "dennis@example.com"
+    assert msg.to[0].email == "bob@example.com"
     assert "tomorrow at 10 AM" in msg.body_text
     assert "tomorrow at 10 AM" in msg.body_markdown
     assert len(attachments) == 0
 
 
 def test_parse_multipart_email_with_attachment():
-    raw_email = b"""From: Billing <billing@service.com>
-To: Dennis <dennis@example.com>
+    raw_email = b"""From: Billing <billing@service.example>
+To: Customer <customer@service.example>
 Subject: Invoice #2026-0891
 Date: Thu, 20 Aug 2026 15:00:00 +0000
-Message-ID: <inv-2026-0891@service.com>
+Message-ID: <inv-2026-0891@service.example>
 MIME-Version: 1.0
 Content-Type: multipart/mixed; boundary="BOUNDARY123"
 

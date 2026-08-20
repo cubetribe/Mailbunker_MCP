@@ -18,7 +18,7 @@ def test_crypto_engine_encryption_roundtrip():
     assert decrypted == secret_bytes
 
     # Test string
-    secret_str = "Confidential meeting at 14:00 with Dennis"
+    secret_str = "Confidential meeting at 14:00 with Project Lead"
     enc_str = crypto.encrypt_str(secret_str)
     assert enc_str != secret_str
     assert crypto.decrypt_str(enc_str) == secret_str
