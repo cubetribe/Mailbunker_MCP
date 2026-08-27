@@ -1,0 +1,40 @@
+name: "💡 Feature Request"
+description: "Suggest an idea, new MCP tool, or improvement for Mailbunker."
+title: "[FEATURE]: "
+labels: ["enhancement", "needs-discussion"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea to make Mailbunker even better? We'd love to hear it!
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem or Use Case"
+      description: "Is your feature request related to a problem or a specific workflow? (e.g. 'I want my AI to summarize email threads with attachments...')"
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: "Proposed Solution / Feature Description"
+      description: "Describe the solution you'd like to see. How should it work from a user or MCP perspective?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives Considered"
+      description: "Any alternative solutions or features you've considered."
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: "Willingness to Contribute"
+      description: "Would you be interested in working on this feature with guidance?"
+      options:
+        - label: "Yes, I can submit a Pull Request for this feature!"
+        - label: "I can help test and verify the feature."

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "🔒 Security Vulnerability Report"
+    url: "mailto:info@cubetribe.com"
+    about: "Please report security vulnerabilities responsibly via email according to SECURITY.md."
+  - name: "💬 Discussions & General Questions"
+    url: "https://github.com/cubetribe/Mailbunker_MCP/discussions"
+    about: "Ask questions, share workflows, and discuss ideas with the community."

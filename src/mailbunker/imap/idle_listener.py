@@ -7,12 +7,27 @@ from typing import Optional, Callable
 from datetime import datetime, timezone
 
 from .client import AsyncImapClient
-from .parser import parse_email_message
+from ..ingest.pipeline import ingest_raw, DECISION_STORE
 from ..config import AccountConfig
 from ..storage.database import MailbunkerDatabase
 from ..storage.obsidian import ObsidianVaultExporter
 
 logger = logging.getLogger("mailbunker.imap.idle")
+
+
+def _short_error_reason(err: Exception, max_len: int = 80) -> str:
+    """
+    Build a short, non-sensitive `ingest_log.reason` value for an exception.
+
+    `ingest_log` is unencrypted metadata storage; the full `str(err)` of a parse/fetch failure
+    can contain fragments of message content (headers, addresses, etc.), which would violate
+    the "nothing leaks from a filtered/failed mail" principle. Only the exception type plus a
+    short, truncated message summary is kept.
+    """
+    msg = " ".join(str(err).split())  # collapse whitespace/newlines
+    if len(msg) > max_len:
+        msg = msg[:max_len] + "..."
+    return f"{type(err).__name__}: {msg}" if msg else type(err).__name__
 
 
 class IdleFolderListener:
@@ -149,28 +164,48 @@ class IdleFolderListener:
             if not self._running:
                 break
             try:
-                raw_bytes = await self._client.fetch_raw_message(uid)
+                raw_bytes, flags = await self._client.fetch_raw_message(uid)
                 if not raw_bytes:
+                    # Message vanished between SEARCH and FETCH -- not a processing error.
+                    self.db.log_ingest_decision(self.account_config.id, self.folder, uid, "empty", "no raw bytes returned")
+                    highest_uid = max(highest_uid, uid)
                     continue
 
-                msg, attachments = parse_email_message(
+                decision, msg = ingest_raw(
+                    self.db,
                     raw_bytes=raw_bytes,
                     account=self.account_config.name,
                     folder=self.folder,
                     uid=uid,
+                    flags=flags,
                 )
-
-                self.db.insert_email(msg, attachments)
-                ingested += 1
+                # Watermark fix: advance for every UID decision (store/quarantine/block), not
+                # only successful inserts -- see sync_manager.sync_folder for the same fix.
+                # Genuine exceptions (below) skip the advance and get retried next time.
                 highest_uid = max(highest_uid, uid)
 
-                # Optional real-time Obsidian export
-                if self.auto_export_obsidian and self.obsidian_exporter and self.obsidian_vault_path:
-                    from pathlib import Path
-                    self.obsidian_exporter.export_email(msg, Path(self.obsidian_vault_path))
+                if decision.decision == DECISION_STORE:
+                    ingested += 1
+                    # Optional real-time Obsidian export. Security review fix (Sprint 04
+                    # finalization, FIX B): re-read the persisted row before exporting -- a
+                    # fresh `store` decision on THIS parse does not guarantee the row that
+                    # actually landed in the DB is unquarantined, since `insert_email`'s
+                    # `preserve_classification` merge can carry forward an earlier quarantine
+                    # decision on a re-ingest of the same message id (e.g. IDLE redelivering
+                    # after a reconnect), which the in-memory `msg` built from this parse never
+                    # reflects. Never write a quarantined mail into the plaintext vault.
+                    if self.auto_export_obsidian and self.obsidian_exporter and self.obsidian_vault_path and msg:
+                        from pathlib import Path
+                        stored_msg = self.db.get_email(msg.id)
+                        if stored_msg and not stored_msg.quarantined:
+                            self.obsidian_exporter.export_email(stored_msg, Path(self.obsidian_vault_path))
 
             except Exception as err:
                 logger.error(f"Failed to process email UID {uid} on {self.account_config.name}/{self.folder}: {err}")
+                # ingest_log is unencrypted metadata storage -- never persist the full exception
+                # text there (it can carry header/address fragments from the message being
+                # processed). Log type + a short, truncated summary instead.
+                self.db.log_ingest_decision(self.account_config.id, self.folder, uid, "error", _short_error_reason(err))
 
         self.last_sync = datetime.now(timezone.utc)
         self.db.update_sync_state(self.account_config.id, self.folder, highest_uid, uid_validity)
