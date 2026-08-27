@@ -35,9 +35,11 @@ ENV/
 *.secret
 
 # Mailbunker Data & Vault (Encrypted or Decrypted)
-data/
-storage/
-vault/
+# NOTE: anchored to repo root so they do NOT match the source package
+# src/mailbunker/storage/ (a bare "storage/" ignores it at any depth).
+/data/
+/storage/
+/vault/
 *.db
 *.db-journal
 *.db-wal
@@ -45,6 +47,9 @@ vault/
 *.enc
 decrypted_vault/
 exported_vault/
+
+# CC_GodMode local orchestration state (not project content)
+.godmode/
 
 # IDE & OS
 .DS_Store

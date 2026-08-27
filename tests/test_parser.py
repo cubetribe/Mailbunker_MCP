@@ -93,3 +93,74 @@ JVBERi0xLjQKJUZha2UgUERGIEJ5dGVzCg==
     assert meta.content_type == "application/pdf"
     assert payload.startswith(b"%PDF-1.4")
     assert meta.size > 0
+
+
+def test_parse_preserves_trust_headers_and_raw_header_blob():
+    raw_email = b"""From: "Alice Smith" <alice@example.com>
+To: "Bob Jones" <bob@example.com>
+Subject: Trust Header Test
+Date: Thu, 20 Aug 2026 14:30:00 +0200
+Message-ID: <trust-001@example.com>
+Authentication-Results: mx.example.com; spf=pass smtp.mailfrom=example.com; dkim=pass
+Received-SPF: pass (mx.example.com: domain of example.com designates 1.2.3.4 as permitted sender)
+DKIM-Signature: v=1; a=rsa-sha256; d=example.com; s=selector1; bh=abc; b=def
+ARC-Authentication-Results: i=1; mx.example.com; spf=pass
+Return-Path: <alice@example.com>
+List-Id: <bulk.example.com>
+Precedence: bulk
+Auto-Submitted: auto-generated
+X-Mailer: SuperMailer 3.0
+X-Spam-Score: 0.4
+X-Spam-Flag: NO
+X-Spam-Status: No, score=0.4
+Content-Type: text/plain; charset="utf-8"
+
+Trust header preservation test body.
+"""
+    msg, attachments = parse_email_message(raw_email, account="Work", folder="INBOX", uid=301)
+
+    expected_headers = {
+        "Authentication-Results": "mx.example.com; spf=pass smtp.mailfrom=example.com; dkim=pass",
+        "Received-SPF": "pass (mx.example.com: domain of example.com designates 1.2.3.4 as permitted sender)",
+        "Return-Path": "<alice@example.com>",
+        "List-Id": "<bulk.example.com>",
+        "Precedence": "bulk",
+        "Auto-Submitted": "auto-generated",
+        "X-Mailer": "SuperMailer 3.0",
+    }
+    for header, value in expected_headers.items():
+        assert msg.raw_headers.get(header) == value
+
+    assert "DKIM-Signature" in msg.raw_headers
+    assert "ARC-Authentication-Results" in msg.raw_headers
+
+    # All X-Spam-* headers captured regardless of exact suffix.
+    assert msg.raw_headers.get("X-Spam-Score") == "0.4"
+    assert msg.raw_headers.get("X-Spam-Flag") == "NO"
+    assert "X-Spam-Status" in msg.raw_headers
+
+    # Full raw header block persisted verbatim (up to first blank line), for later DKIM/SPF
+    # re-verification -- not just the whitelisted subset.
+    assert msg.raw_header_blob is not None
+    assert "DKIM-Signature" in msg.raw_header_blob
+    assert "Message-ID: <trust-001@example.com>" in msg.raw_header_blob
+    assert "Trust header preservation test body." not in msg.raw_header_blob
+
+
+def test_parse_email_message_populates_flags_when_provided():
+    raw_email = b"""From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Flags Test
+Date: Thu, 20 Aug 2026 14:30:00 +0200
+Message-ID: <flags-001@example.com>
+Content-Type: text/plain; charset="utf-8"
+
+Flags test body.
+"""
+    msg, _ = parse_email_message(
+        raw_email, account="Work", folder="INBOX", uid=401, flags=["\\Seen", "$Junk"]
+    )
+    assert msg.flags == ["\\Seen", "$Junk"]
+
+    msg_no_flags, _ = parse_email_message(raw_email, account="Work", folder="INBOX", uid=402)
+    assert msg_no_flags.flags == []

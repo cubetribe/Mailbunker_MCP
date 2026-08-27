@@ -12,7 +12,7 @@ from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.prompt import Prompt
 
-from .config import load_config, MailbunkerConfig
+from .config import load_config, MailbunkerConfig, OLLAMA_HOST, OLLAMA_CLASSIFIER_MODEL, CLASSIFY_BATCH_SIZE
 from .crypto.engine import CryptoEngine, VaultSentinel
 from .crypto.vault import EncryptedFileVault
 from .storage.database import MailbunkerDatabase
@@ -21,6 +21,8 @@ from .storage.models import SearchQuery
 from .imap.sync_manager import SyncManager
 from .keychain.macos import discover_keychain_internet_accounts, is_macos
 from .mcp.server import run_server as start_mcp_server
+from .classify.client import OllamaClient
+from .classify.worker import run_classification_batch
 
 console = Console()
 
@@ -38,7 +40,7 @@ def get_initialized_context(env_file: Optional[str] = None):
 
 
 @click.group()
-@click.version_option(version="0.1.0")
+@click.version_option(version="0.2.0")
 def main():
     """Mailbunker: Zero-Trust Encrypted Email Archive, Real-Time IMAP Push Ingestion, and MCP Server."""
     pass
@@ -235,6 +237,63 @@ def export_vault(output: str, env_file: Optional[str]):
     console.print(f"[blue]Exporting Obsidian Vault to [bold]{dest}[/bold]...[/blue]")
     count = obsidian_exporter.export_all(dest)
     console.print(f"[bold green]Successfully exported {count} emails and attachments to {dest}![/bold green]")
+
+
+@main.command()
+@click.option("--backfill", is_flag=True, default=False, help="Also (re)classify already-classified, non-quarantined mail (not just new mail).")
+@click.option("--account", "-a", help="Only classify mail belonging to this account")
+@click.option("--env", "env_file", help="Path to custom .env file", type=click.Path(exists=True))
+def classify(backfill: bool, account: Optional[str], env_file: Optional[str]):
+    """Run the async Ollama classifier (Stufe 4) over stored mail.
+
+    Never invoked automatically from the IMAP IDLE push path -- this is a standalone, explicit
+    command so classification latency never affects real-time mail delivery. Ollama is optional:
+    if it cannot be reached, this command reports that cleanly and exits without touching the
+    database or crashing.
+    """
+    config, crypto, db, obsidian_exporter, sync_manager = get_initialized_context(env_file)
+
+    client = OllamaClient(host=OLLAMA_HOST, model=OLLAMA_CLASSIFIER_MODEL)
+
+    if not client.is_reachable():
+        console.print(
+            f"[yellow]Ollama is not reachable at [bold]{OLLAMA_HOST}[/bold] "
+            f"(model: {OLLAMA_CLASSIFIER_MODEL}).[/yellow]\n"
+            f"[dim]Start Ollama and pull the model, then re-run `mailbunker classify`. "
+            f"No emails were touched.[/dim]"
+        )
+        return
+
+    vault_root = config.obsidian_vault_path if config.obsidian_auto_export else None
+
+    with console.status("[bold blue]Classifying emails via Ollama...[/bold blue]"):
+        stats = run_classification_batch(
+            db,
+            client,
+            batch_size=CLASSIFY_BATCH_SIZE,
+            account=account,
+            backfill=backfill,
+            obsidian_exporter=obsidian_exporter if vault_root else None,
+            vault_root=vault_root,
+        )
+
+    if stats.ollama_unavailable and stats.classified == 0:
+        console.print(
+            f"[yellow]Ollama became unreachable during the run at [bold]{OLLAMA_HOST}[/bold]; "
+            f"{stats.classified} email(s) were classified before that.[/yellow]"
+        )
+        return
+
+    console.print(Panel.fit(
+        f"[bold]Processed:[/bold] {stats.processed}\n"
+        f"[bold]Classified:[/bold] {stats.classified}\n"
+        f"[bold]Fallback verdicts:[/bold] {stats.fallback}\n"
+        f"[bold]Skipped (quarantined/missing):[/bold] {stats.skipped}\n"
+        + (f"[yellow]Ollama became unreachable mid-batch; re-run to continue.[/yellow]\n" if stats.ollama_unavailable else "")
+        + ("\n".join(f"[red]{e}[/red]" for e in stats.errors) if stats.errors else ""),
+        title="🧠 Classification Run",
+        border_style="cyan" if not stats.ollama_unavailable else "yellow",
+    ))
 
 
 @main.command(name="keychain-import")

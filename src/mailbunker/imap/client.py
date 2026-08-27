@@ -126,21 +126,48 @@ class AsyncImapClient:
         # Filter out uids <= since_uid in case server returned since_uid on range matching
         return [u for u in uids if u > since_uid]
 
-    async def fetch_raw_message(self, uid: int) -> Optional[bytes]:
-        """Fetch RFC822 raw message bytes for a specific UID."""
+    async def fetch_raw_message(self, uid: int) -> Tuple[Optional[bytes], List[str]]:
+        """
+        Fetch RFC822 raw message bytes plus IMAP flags for a specific UID.
+
+        Returns (raw_bytes, flags). `$Junk`/`\\Seen` etc. are valuable provider spam/trust
+        signals (see PLAN v0.2.0). Falls back to an empty flags list if the server does not
+        return a FLAGS item alongside BODY.PEEK[] (some servers omit it depending on fetch
+        item ordering/quirks) -- the raw message itself is unaffected by that fallback.
+        """
         await self.connect()
         assert self._client is not None
 
-        res, data = await self._client.uid("FETCH", str(uid), "(BODY.PEEK[])")
+        res, data = await self._client.uid("FETCH", str(uid), "(FLAGS BODY.PEEK[])")
         if res != "OK" or not data:
-            return None
+            return None, []
 
-        # Data contains tuples or alternating strings and bytes
+        raw_bytes: Optional[bytes] = None
+        flags: List[str] = []
+
+        def _try_extract_flags(text: str) -> None:
+            nonlocal flags
+            match = re.search(r"FLAGS\s*\(([^)]*)\)", text)
+            if match:
+                flags = [f for f in match.group(1).split() if f]
+
+        # aioimaplib returns a mix of plain response lines (bytes) and (header_line, body_bytes)
+        # tuples for literal fetch items. FLAGS usually rides on a short header line/tuple head;
+        # the actual RFC822 body is either the tuple's second element or a large standalone
+        # bytes blob.
         for item in data:
-            if isinstance(item, (bytes, bytearray)) and len(item) > 10:
-                # Discard FETCH headers if returned as single block
-                return bytes(item)
             if isinstance(item, tuple) and len(item) > 1:
-                return bytes(item[1])
+                header_part = item[0]
+                if isinstance(header_part, (bytes, bytearray)):
+                    _try_extract_flags(header_part.decode("utf-8", errors="ignore"))
+                if isinstance(item[1], (bytes, bytearray)):
+                    raw_bytes = bytes(item[1])
+            elif isinstance(item, (bytes, bytearray)):
+                if len(item) <= 512:
+                    # Short line: most likely the FETCH response header/trailer, may carry FLAGS.
+                    _try_extract_flags(item.decode("utf-8", errors="ignore"))
+                elif raw_bytes is None:
+                    # Discard FETCH headers if returned as a single unsplit block.
+                    raw_bytes = bytes(item)
 
-        return None
+        return raw_bytes, flags
