@@ -6,6 +6,16 @@ All notable changes to Mailbunker MCP are documented in this file. The format is
 
 *(No entries yet — next release pending.)*
 
+## [0.2.1] - 2026-09-17
+
+### Fixed
+
+- **IMAP compatibility with Courier-based providers (All-Inkl/KAS and others):** Synchronisation previously ingested nothing on these servers. Two layered defects, both found against a live 2,857-message mailbox:
+  - Courier-IMAP rejects the `UID SEARCH` command outright (`command UID only possible with COPY, FETCH, EXPUNGE (w/UIDPLUS) or STORE`), so UID enumeration returned no messages even though login and folder selection succeeded.
+  - A bulk `FETCH 1:* (UID)` is not a safe fallback either: `aioimaplib` appends one untagged response per message on a recursive code path, so a mailbox with thousands of messages overflows Python's recursion limit, hangs the sync, and desyncs the connection.
+  - `fetch_uids_since()` now prefers `UID SEARCH` and, where the server refuses it, falls back to a plain `SEARCH` (sequence numbers, which these servers accept) followed by `FETCH (UID)` in bounded batches of 300 that stay well under the recursion limit. Single-message `UID FETCH` for message bodies was never affected.
+- **Regression coverage:** New `tests/test_imap_client.py` covers the preferred `UID SEARCH` path, the Courier fallback, incremental (`since_uid`) filtering, and the batch-size bound.
+
 ## [0.2.0] - 2026-08-24
 
 ### Added
