@@ -108,7 +108,15 @@ class AsyncImapClient:
         return msg_count, uid_validity
 
     async def fetch_uids_since(self, since_uid: int = 0) -> List[int]:
-        """Fetch all message UIDs greater than since_uid."""
+        """Fetch all message UIDs greater than since_uid.
+
+        Prefers ``UID SEARCH`` (returns UIDs directly and is cheap). Some IMAP
+        servers -- notably certain Courier-IMAP setups (e.g. All-Inkl/KAS) --
+        reject ``UID SEARCH`` with "command UID only possible with COPY, FETCH,
+        EXPUNGE (w/UIDPLUS) or STORE". For those we fall back to a plain
+        ``FETCH 1:* (UID)`` and filter client-side; ``UID FETCH`` (used by
+        :meth:`fetch_raw_message`) is still accepted by such servers.
+        """
         await self.connect()
         assert self._client is not None
 
@@ -117,14 +125,80 @@ class AsyncImapClient:
         else:
             search_crit = "ALL"
 
-        res, data = await self._client.uid("SEARCH", search_crit)
+        # Preferred path: UID SEARCH.
+        try:
+            res, data = await self._client.uid("SEARCH", search_crit)
+            if res == "OK":
+                if not data:
+                    return []
+                uids_raw = data[0].decode("utf-8") if isinstance(data[0], bytes) else str(data[0])
+                uids = [int(u) for u in uids_raw.split() if u.isdigit()]
+                # Filter uids <= since_uid in case the server included the boundary UID.
+                return [u for u in uids if u > since_uid]
+            logger.debug(
+                f"UID SEARCH rejected on {self.config.host} (res={res}); "
+                f"falling back to FETCH (UID)."
+            )
+        except Exception as e:
+            logger.debug(
+                f"UID SEARCH not supported on {self.config.host} "
+                f"({type(e).__name__}); falling back to FETCH (UID)."
+            )
+
+        return await self._fetch_uids_via_search_fetch(since_uid)
+
+    async def _fetch_uids_via_search_fetch(self, since_uid: int = 0, batch_size: int = 300) -> List[int]:
+        """Fallback UID enumeration for servers that reject ``UID SEARCH``.
+
+        Some Courier-IMAP servers (e.g. All-Inkl/KAS) reject the ``UID SEARCH``
+        command outright. A bulk ``FETCH 1:* (UID)`` is not a safe alternative
+        either: aioimaplib appends one untagged response per message on a
+        recursive code path, so a large mailbox (thousands of messages)
+        overflows Python's recursion limit and desyncs the connection. Instead we
+        issue a plain ``SEARCH`` (returns sequence numbers -- accepted by these
+        servers) and map sequence numbers to UIDs with ``FETCH (UID)`` in bounded
+        batches that stay well under the recursion limit. ``UID FETCH`` for the
+        individual message bodies (see :meth:`fetch_raw_message`) is unaffected.
+        """
+        assert self._client is not None
+
+        # Plain SEARCH returns sequence numbers (works where UID SEARCH is refused).
+        try:
+            res, data = await self._client.search("ALL")
+        except Exception as e:
+            logger.warning(f"Fallback SEARCH failed on {self.config.host}: {type(e).__name__}")
+            return []
         if res != "OK" or not data:
             return []
 
-        uids_raw = data[0].decode("utf-8") if isinstance(data[0], bytes) else str(data[0])
-        uids = [int(u) for u in uids_raw.split() if u.isdigit()]
-        # Filter out uids <= since_uid in case server returned since_uid on range matching
-        return [u for u in uids if u > since_uid]
+        seq_raw = data[0].decode("utf-8") if isinstance(data[0], (bytes, bytearray)) else str(data[0])
+        seqs = [int(s) for s in seq_raw.split() if s.isdigit()]
+        if not seqs:
+            return []
+
+        uids: List[int] = []
+        for i in range(0, len(seqs), batch_size):
+            batch = seqs[i : i + batch_size]
+            seqset = ",".join(str(s) for s in batch)
+            try:
+                fres, fdata = await self._client.fetch(seqset, "(UID)")
+            except Exception as e:
+                logger.warning(
+                    f"Fallback FETCH (UID) batch failed on {self.config.host}: {type(e).__name__}"
+                )
+                continue
+            if fres != "OK" or not fdata:
+                continue
+            for line in fdata:
+                text = (
+                    line.decode("utf-8", errors="ignore")
+                    if isinstance(line, (bytes, bytearray))
+                    else str(line)
+                )
+                m = re.search(r"\bUID\s+(\d+)", text)
+                if m:
+                    uids.append(int(m.group(1)))
+        return sorted(u for u in uids if u > since_uid)
 
     async def fetch_raw_message(self, uid: int) -> Tuple[Optional[bytes], List[str]]:
         """
